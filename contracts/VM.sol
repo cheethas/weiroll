@@ -51,53 +51,43 @@ abstract contract VM {
                 indices = bytes32(uint256(command << 40) | SHORT_COMMAND_FILL);
             }
 
-            if (flags & FLAG_CT_MASK == FLAG_CT_DELEGATECALL) {
-                (success, outdata) = address(uint160(uint256(command))).delegatecall( // target
-                    // inputs
-                    state.buildInputs(
-                        //selector
-                        bytes4(command),
-                        indices
-                    )
-                );
-            } else if (flags & FLAG_CT_MASK == FLAG_CT_CALL) {
-                (success, outdata) = address(uint160(uint256(command))).call( // target
-                    // inputs
-                    state.buildInputs(
-                        //selector
-                        bytes4(command),
-                        indices
-                    )
-                );
-            } else if (flags & FLAG_CT_MASK == FLAG_CT_STATICCALL) {
-                (success, outdata) = address(uint160(uint256(command))).staticcall( // target
-                    // inputs
-                    state.buildInputs(
-                        //selector
-                        bytes4(command),
-                        indices
-                    )
-                );
-            } else if (flags & FLAG_CT_MASK == FLAG_CT_VALUECALL) {
-                uint256 calleth;
-                bytes memory v = state[uint8(bytes1(indices))];
-                require(v.length == 32, "_execute: value call has no value indicated.");
-                assembly {
-                    calleth := mload(add(v, 0x20))
-                }
-                (success, outdata) = address(uint160(uint256(command))).call{ // target
-                    value: calleth
-                }(
-                    // inputs
-                    state.buildInputs(
-                        //selector
-                        bytes4(command),
-                        bytes32(uint256(indices << 8) | CommandBuilder.IDX_END_OF_ARGS)
-                    )
-                );
-            } else {
-                revert("Invalid calltype");
+            // Base function pointer to use          
+            function(memory bytes, memory bytes,memory bytes) returns (bool,memory bytes) callfunc;
+
+            uint256 functionTable;
+            assembly {
+                functionTable := mload(0x40)
+                mstore(0x40, add(functionTable, 0x80))
             }
+
+            // Copy function pointers into mem
+            function(memory bytes, memory bytes,memory bytes) returns (bool,memory bytes) j0 = delegate_call;
+            function(memory bytes, memory bytes,memory bytes) returns (bool,memory bytes) j1 = normal_calll;
+            function(memory bytes, memory bytes,memory bytes) returns (bool,memory bytes) j2 = static_call;
+            function(memory bytes, memory bytes,memory bytes) returns (bool,memory bytes) j3 = value_call;
+
+            // Create jump table
+            assembly {
+                mstore(functionTable, j0)
+                mstore(add(functionTable, 0x20), j1)
+                mstore(add(functionTable, 0x40), j2)
+                mstore(add(functionTable, 0x60), j3)
+            }
+            
+            uint256 tableIndex = flags & FLAG_CT_MASK;
+            assembly {
+                callfunc := mload(add(functionTable, shl(5, tableIndex)))
+            }
+            (success, outdata) = callfunc(command, indices);
+            
+
+            // if (flags & FLAG_CT_MASK == FLAG_CT_DELEGATECALL) { 
+            // } else if (flags & FLAG_CT_MASK == FLAG_CT_CALL) {
+            // } else if (flags & FLAG_CT_MASK == FLAG_CT_STATICCALL) {
+            // } else if (flags & FLAG_CT_MASK == FLAG_CT_VALUECALL) {
+            // } else {
+            //     revert("Invalid calltype");
+            // }
 
             if (!success) {
                 if (outdata.length > 0) {
@@ -121,4 +111,55 @@ abstract contract VM {
         }
         return state;
     }
+}
+
+function delegate_call(bytes memory state, bytes memory command, bytes memory indices) internal returns (bool success, bytes memory outdata)) {
+    (success, outdata) = address(uint160(uint256(command))).delegatecall( // target
+        // inputs
+        state.buildInputs(
+            //selector
+            bytes4(command),
+            indices
+        )
+    );
+}
+
+function call(bytes memory state, bytes memory command, bytes memory indices) internal returns (bool success, bytes memory outdata) {
+    (success, outdata) = address(uint160(uint256(command))).call( // target
+        // inputs
+        state.buildInputs(
+            //selector
+            bytes4(command),
+            indices
+        )
+    );
+}
+
+function static_call(bytes memory state, bytes memory command, bytes memory indices) internal returns (bool success, bytes memory outdata) {
+    (success, outdata) = address(uint160(uint256(command))).staticcall( // target
+        // inputs
+        state.buildInputs(
+            //selector
+            bytes4(command),
+            indices
+        )
+    );
+}
+
+function value_call(bytes memory state, bytes memory command, bytes memory indices) internal returns (bool success, bytes memory outdata) {
+    uint256 calleth;
+    bytes memory v = state[uint8(bytes1(indices))];
+    require(v.length == 32, "_execute: value call has no value indicated.");
+    assembly {
+        calleth := mload(add(v, 0x20))
+    }
+    (success, outdata) = address(uint160(uint256(command))).call{ // target
+        value: calleth
+    }
+    // inputs
+    state.buildInputs(
+        //selector
+        bytes4(command),
+        bytes32(uint256(indices << 8) | CommandBuilder.IDX_END_OF_ARGS)
+    )
 }
