@@ -86,14 +86,6 @@ abstract contract VM {
       // Call function
       (success, outdata) = callfunc(state, command, indices);
 
-      // if (flags & FLAG_CT_MASK == FLAG_CT_DELEGATECALL) {
-      // } else if (flags & FLAG_CT_MASK == FLAG_CT_CALL) {
-      // } else if (flags & FLAG_CT_MASK == FLAG_CT_STATICCALL) {
-      // } else if (flags & FLAG_CT_MASK == FLAG_CT_VALUECALL) {
-      // } else {
-      //     revert("Invalid calltype");
-      // }
-
       if (!success) {
         if (outdata.length > 0) {
           assembly {
